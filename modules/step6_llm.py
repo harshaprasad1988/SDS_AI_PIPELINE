@@ -154,27 +154,24 @@ def call_ollama(prompt: str, system: str, model: str = "llama3",
         )
 
 
-def call_qwen(prompt: str, system: str, model: str = "qwen-plus",
+def call_qwen(prompt: str, system: str, model: str = "qwen/qwen3-235b-a22b",
               temperature: float = 0.2, max_tokens: int = 1500) -> str:
-    """Call Alibaba Cloud Qwen via the DashScope OpenAI-compatible endpoint."""
+    """Call Qwen via OpenRouter's OpenAI-compatible endpoint (openrouter.ai)."""
     try:
         from openai import OpenAI
     except ImportError:
         raise RuntimeError("openai package not installed. Run: pip install openai")
 
-    from .config import get_qwen_api_key
+    from .config import get_qwen_api_key, get_openrouter_base_url
     api_key = get_qwen_api_key()
     if not api_key:
         raise RuntimeError(
-            "Qwen requires an API key. Add it to config.json (api_keys.dashscope) "
-            "or set the DASHSCOPE_API_KEY environment variable. "
-            "Get one from https://dashscope.console.aliyun.com/"
+            "Qwen (OpenRouter) requires an API key. Add it to config.json "
+            "(api_keys.openrouter) or set the OPENROUTER_API_KEY environment "
+            "variable. Get one from https://openrouter.ai/keys"
         )
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    )
+    client = OpenAI(api_key=api_key, base_url=get_openrouter_base_url())
     try:
         response = client.chat.completions.create(
             model=model,
@@ -187,7 +184,7 @@ def call_qwen(prompt: str, system: str, model: str = "qwen-plus",
         )
         return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Qwen API error: {e}")
+        logger.error(f"Qwen (OpenRouter) API error: {e}")
         raise
 
 
@@ -204,12 +201,15 @@ class LLMReasoner:
     
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini",
                  temperature: float = 0.2, ollama_url: str = "http://localhost:11434",
-                 dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"):
+                 openrouter_base_url: str = None):
         self.provider = provider
         self.model = model
         self.temperature = temperature
         self.ollama_url = ollama_url
-        self.dashscope_base_url = dashscope_base_url
+        if openrouter_base_url is None:
+            from .config import get_openrouter_base_url
+            openrouter_base_url = get_openrouter_base_url()
+        self.openrouter_base_url = openrouter_base_url
     
     def reason(self, compliance: ComplianceReport, sensitivity: SensitivityReport) -> LLMReasoning:
         """Generate LLM reasoning over compliance and sensitivity results."""
@@ -271,7 +271,7 @@ class LLMReasoner:
             return call_openai(prompt, SYSTEM_PROMPT, self.model, self.temperature)
         elif self.provider == "ollama":
             return call_ollama(prompt, SYSTEM_PROMPT, self.model, self.ollama_url)
-        elif self.provider == "qwen":
+        elif self.provider in ("qwen", "qwen-openrouter"):
             return call_qwen(prompt, SYSTEM_PROMPT, self.model, self.temperature,
                              max_tokens=1500)
         else:
