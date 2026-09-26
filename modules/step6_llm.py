@@ -160,7 +160,8 @@ def call_openrouter(prompt: str, system: str,
     """Call ANY OpenRouter-hosted model via OpenRouter's OpenAI-compatible
     endpoint (https://openrouter.ai/api/v1). The `model` argument is passed
     straight through, so Qwen ("qwen/..."), Microsoft Phi-4
-    ("microsoft/phi-4"), Mistral Small ("mistralai/mistral-small-latest") and
+    ("microsoft/phi-4"), Mistral Small ("mistralai/mistral-small-latest"),
+    DeepSeek ("deepseek/deepseek-v4-flash"), OpenAI ("openai/gpt-4o-mini") and
     every other OpenRouter model ID are all handled by this single function."""
     try:
         from openai import OpenAI
