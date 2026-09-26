@@ -1,0 +1,7 @@
+{
+  "api_keys": {
+    "dashscope": "",
+    "openai": ""
+  },
+  "_comment": "Central configuration. Put your API keys here instead of hardcoding them in the code or exporting env vars. 'dashscope' is used for Qwen OCR (Step 1) and Qwen LLM recommendations (Step 5). Env vars DASHSCOPE_API_KEY / OPENAI_API_KEY override these values if set."
+}
