@@ -1,0 +1,57 @@
+# ──────────────────────────────────────────────────────────────────────────
+# AI based Safety Data Sheet Manager Assist — Central Configuration
+# ──────────────────────────────────────────────────────────────────────────
+
+ocr:
+  engine: "auto"        # Options: tesseract | paddleocr
+  language: "eng"
+  dpi: 300
+  confidence_threshold: 60   # Minimum OCR confidence % to trust a token
+
+nlp:
+  model: "targeted-sds-parser"   # spaCy transformer model
+  ner_labels:
+    - "SUBSTANCE"            # Chemical substance names
+    - "CAS_NUMBER"           # e.g., 7440-06-4 (Platinum)
+    - "WEIGHT_FRACTION"      # e.g., 0.5%, 1200 ppm
+    - "COMPONENT"            # Part / component name
+    - "SUPPLIER"             # Supplier name
+
+compliance:
+  regulations:
+    REACH:
+      svhc_threshold_ppm: 1000        # 0.1 wt% = 1000 ppm
+      source: "data/reach_svhc.csv"
+    RoHS:
+      lead_ppm: 1000
+      mercury_ppm: 1000
+      cadmium_ppm: 100
+      chromium_vi_ppm: 1000
+      pbde_ppm: 1000
+      pbb_ppm: 1000
+      source: "data/rohs_substances.csv"
+    ELV:
+      lead_ppm: 1000
+      mercury_ppm: 1000
+      cadmium_ppm: 100
+      chromium_vi_ppm: 1000
+      source: "data/elv_substances.csv"
+
+sensitivity:
+  method: "sobol"            # Options: sobol | morris | fast
+  num_samples: 1024          # Monte Carlo sample size
+  confidence_level: 0.95     # For uncertainty bounds
+
+llm:
+  provider: "openai"         # Options: openai | ollama | huggingface
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  max_tokens: 1000
+  # For local: ollama_url: "http://localhost:11434"
+
+reporting:
+  output_format: ["json", "pdf", "html"]
+  score_weights:
+    completeness: 0.30
+    consistency:  0.25
+    regulatory:   0.45
