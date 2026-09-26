@@ -158,16 +158,21 @@ class OCRProcessor:
     def _qwen_or_tesseract(self, image):
         """Qwen-VL OCR via DashScope (Alibaba Cloud Model Studio).
 
-        Requires the DASHSCOPE_API_KEY environment variable. Falls back to
+        The API key is read from config.json (api_keys.dashscope) or the
+        DASHSCOPE_API_KEY env var — see modules/config.py. Falls back to
         Tesseract if the API is unavailable or the call fails.
         """
         try:
-            import base64, io, os
+            import base64, io
             from dashscope import MultiModalConversation
+            from .config import get_qwen_api_key
 
-            api_key = os.environ.get("DASHSCOPE_API_KEY")
+            api_key = get_qwen_api_key()
             if not api_key:
-                raise RuntimeError("DASHSCOPE_API_KEY environment variable not set")
+                raise RuntimeError(
+                    "Qwen API key not configured. Set api_keys.dashscope in "
+                    "config.json or export DASHSCOPE_API_KEY."
+                )
 
             model = getattr(self, "qwen_model", "qwen-vl-max-latest")
 
