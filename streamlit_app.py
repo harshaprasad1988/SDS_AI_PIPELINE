@@ -9,7 +9,6 @@ from modules.step3_structurer import DataStructurer
 from modules.step4_compliance import ComplianceEngine, CheckStatus
 from modules.step5_sensitivity import SensitivityAnalyser
 from modules.step6_llm import LLMReasoner
-from modules.config import get_qwen_api_key, get_openai_api_key, CONFIG_PATH
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -103,31 +102,19 @@ def mna():
 # SIDEBAR
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("🔑 API Keys")
-    st.caption(f"Configure keys once in **config.json** (project root) or via environment "
-               f"variables — no need to edit the code. Env vars take priority over config.json.")
-    _dash_key = get_qwen_api_key()
-    _openai_key = get_openai_api_key()
-    k1, k2 = st.columns(2)
-    k1.metric("Qwen / DashScope", "✅ Set" if _dash_key else "❌ Not set")
-    k2.metric("OpenAI", "✅ Set" if _openai_key else "❌ Not set")
-    if not _dash_key:
-        st.caption("Add `\"dashscope\": \"sk-...\"` under `api_keys` in config.json to use Qwen OCR & LLM.")
-
-    st.divider()
     st.header("⚙️ Processing Settings")
     ocr_engine = st.selectbox("Extraction mode", ["auto","tesseract","paddleocr","qwen-vl"], index=0,
                               help="Auto uses native PDF text when available, OCR otherwise. "
                                    "Qwen-VL uses Alibaba Cloud Qwen vision OCR "
-                                   "(key configured in config.json → api_keys.dashscope).")
+                                   "(requires DASHSCOPE_API_KEY).")
     qwen_ocr_model = None
     if ocr_engine == "qwen-vl":
         qwen_ocr_model = st.selectbox(
             "Qwen OCR model",
             ["qwen-vl-max-latest", "qwen-vl-max", "qwen-vl-plus-latest", "qwen-vl-plus"],
             index=0,
-            help="Latest Qwen-VL vision models via DashScope. Needs the key in config.json "
-                 "(api_keys.dashscope) or DASHSCOPE_API_KEY; falls back to Tesseract if unavailable.")
+            help="Latest Qwen-VL vision models via DashScope. Needs DASHSCOPE_API_KEY set; "
+                 "falls back to Tesseract if unavailable.")
     dpi    = st.slider("OCR DPI", 200, 400, 300, 50)
     language = st.text_input("OCR Language", "eng")
     st.divider()
@@ -150,7 +137,7 @@ with st.sidebar:
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
                                  help="qwen-max-latest / qwen-plus are the latest hosted Qwen models; "
                                       "qwen2.5-72b-instruct is the latest open-weight Qwen. "
-                                      "Qwen needs the key in config.json (api_keys.dashscope).")
+                                      "Qwen needs DASHSCOPE_API_KEY set.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
     show_raw    = st.checkbox("Show raw extracted text", value=False)
     show_source = st.checkbox("Show extraction source", value=False)
@@ -724,8 +711,8 @@ if llm_enabled or llm_reasoning:
     if not llm_enabled:
         st.info("Enable **Generate LLM recommendations** in the sidebar, then re-run the analysis.")
     elif llm_reasoning is None:
-        st.warning("LLM step did not complete — check the provider and that the API key is "
-                   "configured in config.json (api_keys.openai / api_keys.dashscope), "
+        st.warning("LLM step did not complete — check the provider and that the API key "
+                   "(OPENAI_API_KEY / DASHSCOPE_API_KEY) is set, "
                    "or that Ollama is running locally.")
     else:
         lm1, lm2 = st.columns(2)
