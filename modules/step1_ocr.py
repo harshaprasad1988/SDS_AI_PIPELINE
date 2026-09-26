@@ -156,52 +156,52 @@ class OCRProcessor:
             return _ocr_tesseract(image, self.lang)
 
     def _qwen_or_tesseract(self, image):
-        """Qwen-VL OCR via DashScope (Alibaba Cloud Model Studio).
+        """Qwen-VL OCR via OpenRouter (https://openrouter.ai).
 
-        The API key is read from config.json (api_keys.dashscope) or the
-        DASHSCOPE_API_KEY env var — see modules/config.py. Falls back to
-        Tesseract if the API is unavailable or the call fails.
+        Uses the OpenAI-compatible chat completions API with a Qwen vision
+        model (e.g. qwen/qwen2.5-vl-72b-instruct). The API key is read from
+        config.json (api_keys.openrouter) or the OPENROUTER_API_KEY env var —
+        see modules/config.py. Falls back to Tesseract if the API is
+        unavailable or the call fails.
         """
         try:
             import base64, io
-            from dashscope import MultiModalConversation
-            from .config import get_qwen_api_key
+            from openai import OpenAI
+            from .config import get_qwen_api_key, get_openrouter_base_url
 
             api_key = get_qwen_api_key()
             if not api_key:
                 raise RuntimeError(
-                    "Qwen API key not configured. Set api_keys.dashscope in "
-                    "config.json or export DASHSCOPE_API_KEY."
+                    "OpenRouter API key not configured. Set api_keys.openrouter "
+                    "in config.json or export OPENROUTER_API_KEY."
                 )
 
-            model = getattr(self, "qwen_model", "qwen-vl-max-latest")
+            model = getattr(self, "qwen_model", None) or "qwen/qwen2.5-vl-72b-instruct"
 
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="PNG")
             data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
-            messages = [{
-                "role": "user",
-                "content": [
-                    {"image": data_url},
-                    {"text": "Extract ALL text from this Safety Data Sheet page, "
-                             "preserving layout, tables and field labels. "
-                             "Return only the extracted text."},
-                ],
-            }]
-            resp = MultiModalConversation.call(model=model, messages=messages,
-                                               api_key=api_key)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Qwen API error {resp.status_code}: {getattr(resp, 'message', '')}")
+            client = OpenAI(api_key=api_key, base_url=get_openrouter_base_url())
+            resp = client.chat.completions.create(
+                model=model,
+                max_tokens=4096,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url",
+                         "image_url": {"url": data_url}},
+                        {"type": "text",
+                         "text": "Extract ALL text from this Safety Data Sheet page, "
+                                 "preserving layout, tables and field labels. "
+                                 "Return only the extracted text."},
+                    ],
+                }],
+            )
 
-            content = resp.output.choices[0].message.content
-            text = "".join(
-                item.get("text", "") if isinstance(item, dict) else str(item)
-                for item in content
-            ) if isinstance(content, list) else str(content)
-            text = text.strip()
+            text = (resp.choices[0].message.content or "").strip()
             if not text:
-                raise RuntimeError("Qwen returned empty text")
+                raise RuntimeError("Qwen (OpenRouter) returned empty text")
 
             # Qwen does not provide per-word confidence; use a high fixed value.
             return PageOCRResult(0, text, 95.0, [], _looks_like_table(text), "qwen-vl")

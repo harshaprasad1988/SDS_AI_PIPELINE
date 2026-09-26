@@ -105,16 +105,16 @@ with st.sidebar:
     st.header("⚙️ Processing Settings")
     ocr_engine = st.selectbox("Extraction mode", ["auto","tesseract","paddleocr","qwen-vl"], index=0,
                               help="Auto uses native PDF text when available, OCR otherwise. "
-                                   "Qwen-VL uses Alibaba Cloud Qwen vision OCR "
-                                   "(requires DASHSCOPE_API_KEY).")
+                                   "Qwen-VL uses Qwen vision OCR via OpenRouter "
+                                   "(requires api_keys.openrouter in config.json).")
     qwen_ocr_model = None
     if ocr_engine == "qwen-vl":
         qwen_ocr_model = st.selectbox(
-            "Qwen OCR model",
-            ["qwen-vl-max-latest", "qwen-vl-max", "qwen-vl-plus-latest", "qwen-vl-plus"],
+            "Qwen OCR model (OpenRouter)",
+            ["qwen/qwen2.5-vl-72b-instruct", "qwen/qwen-vl-max", "qwen/qwen3-vl-32b-instruct"],
             index=0,
-            help="Latest Qwen-VL vision models via DashScope. Needs DASHSCOPE_API_KEY set; "
-                 "falls back to Tesseract if unavailable.")
+            help="Qwen vision models served through OpenRouter. Needs your OpenRouter "
+                 "API key set in config.json; falls back to Tesseract if unavailable.")
     dpi    = st.slider("OCR DPI", 200, 400, 300, 50)
     language = st.text_input("OCR Language", "eng")
     st.divider()
@@ -125,19 +125,24 @@ with st.sidebar:
     llm_provider = llm_model = None
     llm_temperature = 0.2
     if llm_enabled:
-        llm_provider = st.selectbox("LLM provider", ["openai", "qwen", "ollama"], index=1,
-                                    help="openai = GPT models, qwen = Alibaba Cloud Qwen (DashScope), "
-                                         "ollama = local models (no API key).")
+        llm_provider = st.selectbox("LLM provider", ["openai", "qwen-openrouter", "ollama"], index=1,
+                                    help="openai = GPT models, qwen-openrouter = Qwen models "
+                                         "served via OpenRouter, ollama = local models (no API key).")
         MODEL_CHOICES = {
             "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
-            "qwen":   ["qwen-plus", "qwen-max-latest", "qwen-turbo-latest", "qwen2.5-72b-instruct"],
+            "qwen-openrouter": [
+                "qwen/qwen3-235b-a22b",
+                "qwen/qwen-2.5-72b-instruct",
+                "qwen/qwen-plus",
+                "qwen/qwen-turbo",
+            ],
             "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
         }
-        DEFAULT_IDX = {"openai": 0, "qwen": 0, "ollama": 0}
+        DEFAULT_IDX = {"openai": 0, "qwen-openrouter": 0, "ollama": 0}
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="qwen-max-latest / qwen-plus are the latest hosted Qwen models; "
-                                      "qwen2.5-72b-instruct is the latest open-weight Qwen. "
-                                      "Qwen needs DASHSCOPE_API_KEY set.")
+                                 help="qwen/qwen3-235b-a22b is the latest flagship Qwen on OpenRouter; "
+                                      "qwen/qwen-2.5-72b-instruct is the latest open-weight Qwen. "
+                                      "Qwen-via-OpenRouter needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
     show_raw    = st.checkbox("Show raw extracted text", value=False)
     show_source = st.checkbox("Show extraction source", value=False)
@@ -712,7 +717,7 @@ if llm_enabled or llm_reasoning:
         st.info("Enable **Generate LLM recommendations** in the sidebar, then re-run the analysis.")
     elif llm_reasoning is None:
         st.warning("LLM step did not complete — check the provider and that the API key "
-                   "(OPENAI_API_KEY / DASHSCOPE_API_KEY) is set, "
+                   "(OPENAI_API_KEY / api_keys.openrouter in config.json) is set, "
                    "or that Ollama is running locally.")
     else:
         lm1, lm2 = st.columns(2)
