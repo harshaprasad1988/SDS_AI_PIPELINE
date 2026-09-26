@@ -126,24 +126,29 @@ with st.sidebar:
     llm_temperature = 0.2
     llm_max_tokens = 1500
     if llm_enabled:
-        llm_provider = st.selectbox("LLM provider", ["openai", "qwen-openrouter", "ollama"], index=1,
-                                    help="openai = GPT models, qwen-openrouter = Qwen models "
-                                         "served via OpenRouter, ollama = local models (no API key).")
+        llm_provider = st.selectbox("LLM provider", ["openai", "openrouter", "ollama"], index=1,
+                                    help="openai = GPT models, openrouter = Qwen / Microsoft Phi-4 / "
+                                         "Mistral Small served via OpenRouter, ollama = local models (no API key).")
         MODEL_CHOICES = {
             "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
-            "qwen-openrouter": [
+            "openrouter": [
+                # Qwen
                 "qwen/qwen3-235b-a22b",
                 "qwen/qwen-2.5-72b-instruct",
                 "qwen/qwen-plus",
                 "qwen/qwen-turbo",
+                # Microsoft
+                "microsoft/phi-4",
+                # Mistral
+                "mistralai/mistral-small-latest",
             ],
             "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
         }
-        DEFAULT_IDX = {"openai": 0, "qwen-openrouter": 0, "ollama": 0}
+        DEFAULT_IDX = {"openai": 0, "openrouter": 0, "ollama": 0}
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="qwen/qwen3-235b-a22b is the latest flagship Qwen on OpenRouter; "
-                                      "qwen/qwen-2.5-72b-instruct is the latest open-weight Qwen. "
-                                      "Qwen-via-OpenRouter needs your OpenRouter API key in config.json.")
+                                 help="Qwen flagship/open-weight, microsoft/phi-4 and "
+                                      "mistralai/mistral-small-latest are all served via OpenRouter. "
+                                      "Needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
         llm_max_tokens = st.select_slider(
             "Max output tokens",

@@ -154,9 +154,10 @@ def call_ollama(prompt: str, system: str, model: str = "llama3",
         )
 
 
-def call_qwen(prompt: str, system: str, model: str = "qwen/qwen3-235b-a22b",
-              temperature: float = 0.2, max_tokens: int = 1500) -> str:
-    """Call Qwen via OpenRouter's OpenAI-compatible endpoint (openrouter.ai)."""
+def call_openrouter(prompt: str, system: str, model: str = "qwen/qwen3-235b-a22b",
+                    temperature: float = 0.2, max_tokens: int = 1500) -> str:
+    """Call any OpenRouter-hosted model (Qwen, Phi-4, Mistral Small, ...) via its
+    OpenAI-compatible endpoint (openrouter.ai)."""
     try:
         from openai import OpenAI
     except ImportError:
@@ -273,8 +274,8 @@ class LLMReasoner:
                                max_tokens=self.max_tokens)
         elif self.provider == "ollama":
             return call_ollama(prompt, SYSTEM_PROMPT, self.model, self.ollama_url)
-        elif self.provider in ("qwen", "qwen-openrouter"):
-            return call_qwen(prompt, SYSTEM_PROMPT, self.model, self.temperature,
+        elif self.provider in ("qwen", "qwen-openrouter", "openrouter"):
+            return call_openrouter(prompt, SYSTEM_PROMPT, self.model, self.temperature,
                              max_tokens=self.max_tokens)
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
