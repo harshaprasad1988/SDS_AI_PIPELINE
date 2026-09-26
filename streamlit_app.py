@@ -473,12 +473,11 @@ st.markdown("---")
 st.header("⚖️ Step 4 — Regulatory Compliance Screening")
 st.caption("PASS = below threshold. REVIEW = range crosses threshold. FAIL = above threshold. UNKNOWN = CAS not in configured ruleset.")
 
-c1,c2,c3,c4,c5 = st.columns(5)
-c1.metric("Overall score",    f"{compliance.overall_score}/100")
-c2.metric("✅ PASS",          compliance.pass_count)
-c3.metric("🔶 REVIEW",        compliance.warn_count)
-c4.metric("❌ FAIL",          compliance.fail_count)
-c5.metric("⏱ Time",           f"{st.session_state.get('step4_time',0):.2f}s")
+c1,c2,c3,c4 = st.columns(4)
+c1.metric("✅ PASS",          compliance.pass_count)
+c2.metric("🔶 REVIEW",        compliance.warn_count)
+c3.metric("❌ FAIL",          compliance.fail_count)
+c4.metric("⏱ Time",           f"{st.session_state.get('step4_time',0):.2f}s")
 
 reg_rows = []
 for f in compliance.findings:
@@ -656,7 +655,7 @@ with st.expander("📊 Step 5 — Evaluation Metrics (Sensitivity Coverage)", ex
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.header("📊 Evaluation Metrics — Full Pipeline Summary")
-st.caption("All six evaluation metrics from the project proposal, measured against this document.")
+st.caption("All five evaluation metrics from the project proposal, measured against this document.")
 
 ocr_conf    = ocr.avg_confidence
 cer         = max(0, 100 - ocr_conf)
@@ -705,14 +704,6 @@ rows_summary = [
         "Target":         "All near-threshold flagged",
         "Measured":       f"{len(near_sub)}/{len(sensitivity.results)} substances with threshold risks  |  Avg P(exceed) {avg_p*100:.1f}%",
         "Status":         "✅ PASS" if len(sensitivity.results) > 0 else "⚠️ WARN",
-    },
-    {
-        "Metric":         "Recommendation Relevance Score",
-        "Step":           "Step 4",
-        "Formula":        "Likert 1–5 (domain expert rating)",
-        "Target":         "Mean ≥ 4.0 / 5.0",
-        "Measured":       f"Overall compliance score: {compliance.overall_score}/100  (proxy; expert rating pending)",
-        "Status":         "⚠️ PENDING",
     },
     {
         "Metric":         "End-to-End Processing Time",
