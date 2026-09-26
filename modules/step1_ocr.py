@@ -126,6 +126,8 @@ class OCRProcessor:
             processed = preprocess_image(image)
             if self.engine == "paddleocr":
                 result = self._paddle_or_tesseract(processed)
+            elif self.engine in ("qwen", "qwen-vl"):
+                result = self._qwen_or_tesseract(processed)
             else:
                 result = _ocr_tesseract(processed, self.lang)
             result.page_number = i + 1
@@ -151,6 +153,55 @@ class OCRProcessor:
                                  float(np.mean(confs)) if confs else 0.0,
                                  words, _looks_like_table("\n".join(lines)), "paddleocr")
         except Exception:
+            return _ocr_tesseract(image, self.lang)
+
+    def _qwen_or_tesseract(self, image):
+        """Qwen-VL OCR via DashScope (Alibaba Cloud Model Studio).
+
+        Requires the DASHSCOPE_API_KEY environment variable. Falls back to
+        Tesseract if the API is unavailable or the call fails.
+        """
+        try:
+            import base64, io, os
+            from dashscope import MultiModalConversation
+
+            api_key = os.environ.get("DASHSCOPE_API_KEY")
+            if not api_key:
+                raise RuntimeError("DASHSCOPE_API_KEY environment variable not set")
+
+            model = getattr(self, "qwen_model", "qwen-vl-max-latest")
+
+            buf = io.BytesIO()
+            image.convert("RGB").save(buf, format="PNG")
+            data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"image": data_url},
+                    {"text": "Extract ALL text from this Safety Data Sheet page, "
+                             "preserving layout, tables and field labels. "
+                             "Return only the extracted text."},
+                ],
+            }]
+            resp = MultiModalConversation.call(model=model, messages=messages,
+                                               api_key=api_key)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Qwen API error {resp.status_code}: {getattr(resp, 'message', '')}")
+
+            content = resp.output.choices[0].message.content
+            text = "".join(
+                item.get("text", "") if isinstance(item, dict) else str(item)
+                for item in content
+            ) if isinstance(content, list) else str(content)
+            text = text.strip()
+            if not text:
+                raise RuntimeError("Qwen returned empty text")
+
+            # Qwen does not provide per-word confidence; use a high fixed value.
+            return PageOCRResult(0, text, 95.0, [], _looks_like_table(text), "qwen-vl")
+        except Exception as exc:
+            logger.warning(f"Qwen OCR failed ({exc}); falling back to Tesseract.")
             return _ocr_tesseract(image, self.lang)
 
     def _load_images(self, path: Path):

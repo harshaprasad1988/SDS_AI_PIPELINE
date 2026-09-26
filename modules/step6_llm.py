@@ -153,6 +153,42 @@ def call_ollama(prompt: str, system: str, model: str = "llama3",
         )
 
 
+def call_qwen(prompt: str, system: str, model: str = "qwen-plus",
+              temperature: float = 0.2, max_tokens: int = 1500) -> str:
+    """Call Alibaba Cloud Qwen via the DashScope OpenAI-compatible endpoint."""
+    import os
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise RuntimeError("openai package not installed. Run: pip install openai")
+
+    api_key = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("QWEN_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "Qwen requires a DASHSCOPE_API_KEY (or QWEN_API_KEY) environment variable. "
+            "Get one from https://dashscope.console.aliyun.com/"
+        )
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Qwen API error: {e}")
+        raise
+
+
 # ── Main LLM Reasoner ────────────────────────────────────────────────────────
 
 class LLMReasoner:
@@ -165,11 +201,13 @@ class LLMReasoner:
     """
     
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini",
-                 temperature: float = 0.2, ollama_url: str = "http://localhost:11434"):
+                 temperature: float = 0.2, ollama_url: str = "http://localhost:11434",
+                 dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"):
         self.provider = provider
         self.model = model
         self.temperature = temperature
         self.ollama_url = ollama_url
+        self.dashscope_base_url = dashscope_base_url
     
     def reason(self, compliance: ComplianceReport, sensitivity: SensitivityReport) -> LLMReasoning:
         """Generate LLM reasoning over compliance and sensitivity results."""
@@ -231,6 +269,9 @@ class LLMReasoner:
             return call_openai(prompt, SYSTEM_PROMPT, self.model, self.temperature)
         elif self.provider == "ollama":
             return call_ollama(prompt, SYSTEM_PROMPT, self.model, self.ollama_url)
+        elif self.provider == "qwen":
+            return call_qwen(prompt, SYSTEM_PROMPT, self.model, self.temperature,
+                             max_tokens=1500)
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
     

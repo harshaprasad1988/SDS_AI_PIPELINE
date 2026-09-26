@@ -8,6 +8,7 @@ from modules.step2_nlp import NLPExtractor
 from modules.step3_structurer import DataStructurer
 from modules.step4_compliance import ComplianceEngine, CheckStatus
 from modules.step5_sensitivity import SensitivityAnalyser
+from modules.step6_llm import LLMReasoner
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -102,10 +103,41 @@ def mna():
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Processing Settings")
-    ocr_engine = st.selectbox("Extraction mode", ["auto","tesseract","paddleocr"], index=0,
-                              help="Auto uses native PDF text when available, OCR otherwise.")
+    ocr_engine = st.selectbox("Extraction mode", ["auto","tesseract","paddleocr","qwen-vl"], index=0,
+                              help="Auto uses native PDF text when available, OCR otherwise. "
+                                   "Qwen-VL uses Alibaba Cloud Qwen vision OCR (requires DASHSCOPE_API_KEY).")
+    qwen_ocr_model = None
+    if ocr_engine == "qwen-vl":
+        qwen_ocr_model = st.selectbox(
+            "Qwen OCR model",
+            ["qwen-vl-max-latest", "qwen-vl-max", "qwen-vl-plus-latest", "qwen-vl-plus"],
+            index=0,
+            help="Latest Qwen-VL vision models via DashScope. Needs the DASHSCOPE_API_KEY env var; "
+                 "falls back to Tesseract if unavailable.")
     dpi    = st.slider("OCR DPI", 200, 400, 300, 50)
     language = st.text_input("OCR Language", "eng")
+    st.divider()
+    st.subheader("🤖 Step 5 — LLM Recommendations")
+    llm_enabled = st.checkbox("Generate LLM recommendations", value=False,
+                              help="Adds an LLM reasoning stage after Step 5 producing "
+                                   "plain-English findings and corrective actions.")
+    llm_provider = llm_model = None
+    llm_temperature = 0.2
+    if llm_enabled:
+        llm_provider = st.selectbox("LLM provider", ["openai", "qwen", "ollama"], index=1,
+                                    help="openai = GPT models, qwen = Alibaba Cloud Qwen (DashScope), "
+                                         "ollama = local models (no API key).")
+        MODEL_CHOICES = {
+            "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+            "qwen":   ["qwen-plus", "qwen-max-latest", "qwen-turbo-latest", "qwen2.5-72b-instruct"],
+            "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
+        }
+        DEFAULT_IDX = {"openai": 0, "qwen": 0, "ollama": 0}
+        llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
+                                 help="qwen-max-latest / qwen-plus are the latest hosted Qwen models; "
+                                      "qwen2.5-72b-instruct is the latest open-weight Qwen. "
+                                      "Requires DASHSCOPE_API_KEY for qwen.")
+        llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
     show_raw    = st.checkbox("Show raw extracted text", value=False)
     show_source = st.checkbox("Show extraction source", value=False)
     st.divider()
@@ -154,7 +186,10 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
     try:
         with st.status("Step 1 — Reading Safety Data Sheet…", expanded=True) as status:
             t0 = time.time()
-            ocr = OCRProcessor(engine=ocr_engine, dpi=dpi, lang=language).process(input_path)
+            ocr_proc = OCRProcessor(engine=ocr_engine, dpi=dpi, lang=language)
+            if qwen_ocr_model:
+                ocr_proc.qwen_model = qwen_ocr_model
+            ocr = ocr_proc.process(input_path)
             st.session_state["ocr_result"]  = ocr
             st.session_state["ocr_time"]    = time.time() - t0
             status.update(label="✅ Step 1 completed", state="complete")
@@ -187,13 +222,28 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
             st.session_state["step5_time"]         = time.time() - t0
             status.update(label="✅ Step 5 completed", state="complete")
 
+        st.session_state["llm_reasoning"] = None
+        if llm_enabled:
+            with st.status(f"Step 5+ — LLM recommendations ({llm_provider}/{llm_model})…", expanded=True) as status:
+                t0 = time.time()
+                try:
+                    reasoner = LLMReasoner(provider=llm_provider, model=llm_model,
+                                           temperature=llm_temperature)
+                    st.session_state["llm_reasoning"] = reasoner.reason(compliance, sensitivity)
+                    st.session_state["llm_time"] = time.time() - t0
+                    status.update(label="✅ LLM recommendations generated", state="complete")
+                except Exception as le:
+                    st.warning(f"LLM step failed: {le}")
+                    status.update(label="⚠️ LLM step skipped", state="complete")
+
         # Compute end-to-end time
         st.session_state["e2e_time"] = (
             st.session_state.get("ocr_time", 0) +
             st.session_state.get("nlp_time", 0) +
             st.session_state.get("step3_time", 0) +
             st.session_state.get("step4_time", 0) +
-            st.session_state.get("step5_time", 0)
+            st.session_state.get("step5_time", 0) +
+            st.session_state.get("llm_time", 0)
         )
 
     except Exception as exc:
@@ -473,12 +523,11 @@ st.markdown("---")
 st.header("⚖️ Step 4 — Regulatory Compliance Screening")
 st.caption("PASS = below threshold. REVIEW = range crosses threshold. FAIL = above threshold. UNKNOWN = CAS not in configured ruleset.")
 
-c1,c2,c3,c4,c5 = st.columns(5)
-c1.metric("Overall score",    f"{compliance.overall_score}/100")
-c2.metric("✅ PASS",          compliance.pass_count)
-c3.metric("🔶 REVIEW",        compliance.warn_count)
-c4.metric("❌ FAIL",          compliance.fail_count)
-c5.metric("⏱ Time",           f"{st.session_state.get('step4_time',0):.2f}s")
+c1,c2,c3,c4 = st.columns(4)
+c1.metric("✅ PASS",          compliance.pass_count)
+c2.metric("🔶 REVIEW",        compliance.warn_count)
+c3.metric("❌ FAIL",          compliance.fail_count)
+c4.metric("⏱ Time",           f"{st.session_state.get('step4_time',0):.2f}s")
 
 reg_rows = []
 for f in compliance.findings:
@@ -652,11 +701,47 @@ with st.expander("📊 Step 5 — Evaluation Metrics (Sensitivity Coverage)", ex
         ), unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  STEP 5 (BONUS) — LLM REASONING & RECOMMENDATIONS
+# ══════════════════════════════════════════════════════════════════════════════
+llm_reasoning = st.session_state.get("llm_reasoning")
+if llm_enabled or llm_reasoning:
+    st.markdown("---")
+    st.header("🤖 Step 5 — LLM Recommendations")
+    if not llm_enabled:
+        st.info("Enable **Generate LLM recommendations** in the sidebar, then re-run the analysis.")
+    elif llm_reasoning is None:
+        st.warning("LLM step did not complete — check the provider/API key settings in the sidebar "
+                   "(OPENAI_API_KEY / DASHSCOPE_API_KEY / Ollama running locally).")
+    else:
+        lm1, lm2 = st.columns(2)
+        lm1.metric("Model used", llm_reasoning.model_used)
+        lm2.metric("⏱ Time", f"{st.session_state.get('llm_time', 0):.2f}s")
+
+        st.subheader("Executive Summary")
+        st.markdown(llm_reasoning.executive_summary or "_No summary returned._")
+
+        st.subheader("Risk Narrative")
+        st.markdown(llm_reasoning.risk_narrative or "_No narrative returned._")
+
+        st.subheader("Substance Recommendations")
+        if llm_reasoning.recommendations:
+            rec_rows = [{
+                "Substance":         r.substance_name,
+                "Status":            r.status,
+                "Plain-English Finding": r.plain_english_finding,
+                "Corrective Action": r.corrective_action,
+                "Exemption Check":   r.exemption_check,
+            } for r in llm_reasoning.recommendations]
+            st.dataframe(pd.DataFrame(rec_rows), use_container_width=True, hide_index=True)
+        else:
+            st.success("No FAIL/WARNING findings — no corrective actions required.")
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  CONSOLIDATED EVALUATION METRICS DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.header("📊 Evaluation Metrics — Full Pipeline Summary")
-st.caption("All six evaluation metrics from the project proposal, measured against this document.")
+st.caption("All five evaluation metrics from the project proposal, measured against this document.")
 
 ocr_conf    = ocr.avg_confidence
 cer         = max(0, 100 - ocr_conf)
@@ -705,14 +790,6 @@ rows_summary = [
         "Target":         "All near-threshold flagged",
         "Measured":       f"{len(near_sub)}/{len(sensitivity.results)} substances with threshold risks  |  Avg P(exceed) {avg_p*100:.1f}%",
         "Status":         "✅ PASS" if len(sensitivity.results) > 0 else "⚠️ WARN",
-    },
-    {
-        "Metric":         "Recommendation Relevance Score",
-        "Step":           "Step 4",
-        "Formula":        "Likert 1–5 (domain expert rating)",
-        "Target":         "Mean ≥ 4.0 / 5.0",
-        "Measured":       f"Overall compliance score: {compliance.overall_score}/100  (proxy; expert rating pending)",
-        "Status":         "⚠️ PENDING",
     },
     {
         "Metric":         "End-to-End Processing Time",
