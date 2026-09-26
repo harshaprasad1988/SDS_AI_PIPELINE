@@ -124,6 +124,7 @@ with st.sidebar:
                                    "plain-English findings and corrective actions.")
     llm_provider = llm_model = None
     llm_temperature = 0.2
+    llm_max_tokens = 1500
     if llm_enabled:
         llm_provider = st.selectbox("LLM provider", ["openai", "qwen-openrouter", "ollama"], index=1,
                                     help="openai = GPT models, qwen-openrouter = Qwen models "
@@ -144,6 +145,12 @@ with st.sidebar:
                                       "qwen/qwen-2.5-72b-instruct is the latest open-weight Qwen. "
                                       "Qwen-via-OpenRouter needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
+        llm_max_tokens = st.select_slider(
+            "Max output tokens",
+            options=[256, 512, 768, 1024, 1500, 2048, 3072, 4096, 8192],
+            value=1500,
+            help="Upper limit on the number of tokens the LLM may generate for the "
+                 "recommendations (prompt + completion must fit the model's context window).")
     show_raw    = st.checkbox("Show raw extracted text", value=False)
     show_source = st.checkbox("Show extraction source", value=False)
     st.divider()
@@ -234,7 +241,8 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
                 t0 = time.time()
                 try:
                     reasoner = LLMReasoner(provider=llm_provider, model=llm_model,
-                                           temperature=llm_temperature)
+                                           temperature=llm_temperature,
+                                           max_tokens=llm_max_tokens)
                     st.session_state["llm_reasoning"] = reasoner.reason(compliance, sensitivity)
                     st.session_state["llm_time"] = time.time() - t0
                     status.update(label="✅ LLM recommendations generated", state="complete")

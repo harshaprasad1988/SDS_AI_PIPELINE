@@ -201,10 +201,11 @@ class LLMReasoner:
     
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini",
                  temperature: float = 0.2, ollama_url: str = "http://localhost:11434",
-                 openrouter_base_url: str = None):
+                 openrouter_base_url: str = None, max_tokens: int = 1500):
         self.provider = provider
         self.model = model
         self.temperature = temperature
+        self.max_tokens = max_tokens
         self.ollama_url = ollama_url
         if openrouter_base_url is None:
             from .config import get_openrouter_base_url
@@ -268,12 +269,13 @@ class LLMReasoner:
     def _call_llm(self, prompt: str) -> str:
         """Dispatch to the correct LLM provider."""
         if self.provider == "openai":
-            return call_openai(prompt, SYSTEM_PROMPT, self.model, self.temperature)
+            return call_openai(prompt, SYSTEM_PROMPT, self.model, self.temperature,
+                               max_tokens=self.max_tokens)
         elif self.provider == "ollama":
             return call_ollama(prompt, SYSTEM_PROMPT, self.model, self.ollama_url)
         elif self.provider in ("qwen", "qwen-openrouter"):
             return call_qwen(prompt, SYSTEM_PROMPT, self.model, self.temperature,
-                             max_tokens=1500)
+                             max_tokens=self.max_tokens)
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
     
