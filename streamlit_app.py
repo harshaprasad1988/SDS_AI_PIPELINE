@@ -127,8 +127,9 @@ with st.sidebar:
     llm_max_tokens = 1500
     if llm_enabled:
         llm_provider = st.selectbox("LLM provider", ["openai", "openrouter", "ollama"], index=1,
-                                    help="openai = GPT models, openrouter = Qwen / Microsoft Phi-4 / "
-                                         "Mistral Small served via OpenRouter, ollama = local models (no API key).")
+                                    help="openai = direct OpenAI GPT models, openrouter = Qwen / Microsoft Phi-4 / "
+                                         "Mistral Small / DeepSeek / OpenAI GPT served via OpenRouter, "
+                                         "ollama = local models (no API key).")
         MODEL_CHOICES = {
             "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
             "openrouter": [
@@ -141,13 +142,18 @@ with st.sidebar:
                 "microsoft/phi-4",
                 # Mistral
                 "mistralai/mistral-small-latest",
+                # DeepSeek
+                "deepseek/deepseek-v4-flash",
+                # OpenAI (via OpenRouter)
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o",
             ],
             "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
         }
         DEFAULT_IDX = {"openai": 0, "openrouter": 0, "ollama": 0}
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="Qwen flagship/open-weight, microsoft/phi-4 and "
-                                      "mistralai/mistral-small-latest are all served via OpenRouter. "
+                                 help="Qwen, microsoft/phi-4, mistralai/mistral-small-latest, "
+                                      "deepseek/deepseek-v4-flash and openai/* are all served via OpenRouter. "
                                       "Needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
         llm_max_tokens = st.select_slider(
