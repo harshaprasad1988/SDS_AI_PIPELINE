@@ -45,14 +45,19 @@ def get_api_key(name: str, *env_vars: str) -> str:
     return ""
 
 
-def get_qwen_api_key() -> str:
-    """Qwen key served via OpenRouter: OPENROUTER_API_KEY env, or config.json.
+def get_openrouter_api_key() -> str:
+    """OpenRouter key (used for Qwen, Phi-4, Mistral Small and any other
+    OpenRouter-hosted model): OPENROUTER_API_KEY env, or config.json.
 
-    Falls back to a legacy DashScope key if no OpenRouter key is configured.
+    Falls back to a legacy DashScope/Qwen key if no OpenRouter key is set.
     """
     return get_api_key("openrouter", "OPENROUTER_API_KEY",
                        "DASHSCOPE_API_KEY", "QWEN_API_KEY") \
         or get_api_key("dashscope", "DASHSCOPE_API_KEY", "QWEN_API_KEY")
+
+
+# Backwards-compatible alias (older code / OCR module may still import this)
+get_qwen_api_key = get_openrouter_api_key
 
 
 def get_openai_api_key() -> str:

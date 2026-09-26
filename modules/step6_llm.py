@@ -154,22 +154,26 @@ def call_ollama(prompt: str, system: str, model: str = "llama3",
         )
 
 
-def call_openrouter(prompt: str, system: str, model: str = "qwen/qwen3-235b-a22b",
+def call_openrouter(prompt: str, system: str,
+                    model: str = "qwen/qwen3-235b-a22b",
                     temperature: float = 0.2, max_tokens: int = 1500) -> str:
-    """Call any OpenRouter-hosted model (Qwen, Phi-4, Mistral Small, ...) via its
-    OpenAI-compatible endpoint (openrouter.ai)."""
+    """Call ANY OpenRouter-hosted model via OpenRouter's OpenAI-compatible
+    endpoint (https://openrouter.ai/api/v1). The `model` argument is passed
+    straight through, so Qwen ("qwen/..."), Microsoft Phi-4
+    ("microsoft/phi-4"), Mistral Small ("mistralai/mistral-small-latest") and
+    every other OpenRouter model ID are all handled by this single function."""
     try:
         from openai import OpenAI
     except ImportError:
         raise RuntimeError("openai package not installed. Run: pip install openai")
 
-    from .config import get_qwen_api_key, get_openrouter_base_url
-    api_key = get_qwen_api_key()
+    from .config import get_openrouter_api_key, get_openrouter_base_url
+    api_key = get_openrouter_api_key()
     if not api_key:
         raise RuntimeError(
-            "Qwen (OpenRouter) requires an API key. Add it to config.json "
-            "(api_keys.openrouter) or set the OPENROUTER_API_KEY environment "
-            "variable. Get one from https://openrouter.ai/keys"
+            f"OpenRouter model '{model}' requires an API key. Add it to "
+            "config.json (api_keys.openrouter) or set the OPENROUTER_API_KEY "
+            "environment variable. Get one from https://openrouter.ai/keys"
         )
 
     client = OpenAI(api_key=api_key, base_url=get_openrouter_base_url())
@@ -185,7 +189,7 @@ def call_openrouter(prompt: str, system: str, model: str = "qwen/qwen3-235b-a22b
         )
         return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Qwen (OpenRouter) API error: {e}")
+        logger.error(f"OpenRouter ({model}) API error: {e}")
         raise
 
 
