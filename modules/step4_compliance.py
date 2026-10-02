@@ -106,23 +106,26 @@ def threshold_check(s, regulation, threshold, name):
         return RegulatoryCheck(regulation,CheckStatus.PASS,threshold,f"{lo:g}-{hi:g}" if s.is_range else f"{lo:g}",f"Reported concentration is at or below {threshold:g} ppm for {name}."), False
     return RegulatoryCheck(regulation,CheckStatus.REVIEW,threshold,f"{lo:g}-{hi:g}",f"Reported range crosses the {threshold:g} ppm threshold; exact compliance cannot be determined from the SDS range."), True
 
-def check_regulatory(s):
+def check_regulatory(s, rohs=None, svhc=None, elv=None):
+    rohs = ROHS_THRESHOLDS if rohs is None else rohs
+    svhc = REACH_SVHC_CAS if svhc is None else svhc
+    elv = ELV_THRESHOLDS if elv is None else elv
     if not s.cas_number:
         return CheckStatus.UNKNOWN,["No CAS number — regulatory screening skipped."],[],[]
     checks=[]; findings=[]; hits=[]
     cas=s.cas_number
-    if cas in REACH_SVHC_CAS:
-        c,h=threshold_check(s,"REACH (SVHC screening)",REACH_THRESHOLD_PPM,REACH_SVHC_CAS[cas]); checks.append(c)
+    if cas in svhc:
+        c,h=threshold_check(s,"REACH (SVHC screening)",REACH_THRESHOLD_PPM,svhc[cas]); checks.append(c)
         if c.status!=CheckStatus.PASS: findings.append(c.rationale); hits.append("REACH")
     else:
         checks.append(RegulatoryCheck("REACH (configured SVHC list)",CheckStatus.UNKNOWN,None,None,"Substance is not in the configured SVHC subset; this is not proof of REACH compliance."))
-    if cas in ROHS_THRESHOLDS:
-        r=ROHS_THRESHOLDS[cas]; c,h=threshold_check(s,"RoHS",r["threshold_ppm"],r["name"]); checks.append(c)
+    if cas in rohs:
+        r=rohs[cas]; c,h=threshold_check(s,"RoHS",r["threshold_ppm"],r["name"]); checks.append(c)
         if c.status!=CheckStatus.PASS: findings.append(c.rationale); hits.append("RoHS")
     else:
         checks.append(RegulatoryCheck("RoHS (configured restricted list)",CheckStatus.UNKNOWN,None,None,"CAS is not in the configured RoHS subset; this is not proof of RoHS compliance."))
-    if cas in ELV_THRESHOLDS:
-        r=ELV_THRESHOLDS[cas]; c,h=threshold_check(s,"ELV",r["threshold_ppm"],r["name"]); checks.append(c)
+    if cas in elv:
+        r=elv[cas]; c,h=threshold_check(s,"ELV",r["threshold_ppm"],r["name"]); checks.append(c)
         if c.status!=CheckStatus.PASS: findings.append(c.rationale); hits.append("ELV")
     else:
         checks.append(RegulatoryCheck("ELV (configured restricted list)",CheckStatus.UNKNOWN,None,None,"CAS is not in the configured ELV subset; this is not proof of ELV compliance."))
@@ -134,12 +137,31 @@ def check_regulatory(s):
     return status,findings,hits,checks
 
 class ComplianceEngine:
-    def __init__(self, score_weights=None):
+    """Deterministic rule-based regulatory screening engine (REACH / RoHS / ELV).
+
+    An optional ``ruleset`` dict can override the built-in thresholds; when
+    supplied, :attr:`engine_name` reflects the custom configuration so the UI
+    can print the exact evaluation engine that was used.
+    """
+    def __init__(self, score_weights=None, ruleset=None):
         self.weights=score_weights or {"completeness":.30,"consistency":.25,"regulatory":.45}
+        self.ruleset=ruleset
+        if ruleset is None:
+            self.engine_name="Rule-based deterministic engine (REACH / RoHS / ELV threshold ruleset)"
+        else:
+            self.engine_name=("Custom rule-based deterministic engine "
+                              f"({len(ruleset.get('rohs', ROHS_THRESHOLDS))} RoHS · "
+                              f"{len(ruleset.get('reach_svhc', REACH_SVHC_CAS))} REACH SVHC · "
+                              f"{len(ruleset.get('elv', ELV_THRESHOLDS))} ELV entries)")
     def run(self,mds):
         findings=[]
         for s in mds.all_substances:
-            a,ai=check_completeness(s); b,bi=check_consistency(s,mds.all_substances); c,ci,hits,checks=check_regulatory(s)
+            a,ai=check_completeness(s); b,bi=check_consistency(s,mds.all_substances); c,ci,hits,checks=check_regulatory(
+                s,
+                rohs=(self.ruleset or {}).get("rohs", ROHS_THRESHOLDS),
+                svhc=(self.ruleset or {}).get("reach_svhc", REACH_SVHC_CAS),
+                elv=(self.ruleset or {}).get("elv", ELV_THRESHOLDS),
+            )
             findings.append(SubstanceFinding(s.name,s.cas_number,s.weight_ppm,a,b,c,ai+bi+ci,hits,checks))
         n=len(findings) or 1
         comp=100*sum(f.completeness_status==CheckStatus.PASS for f in findings)/n

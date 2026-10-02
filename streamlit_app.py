@@ -8,7 +8,9 @@ from modules.step2_nlp import NLPExtractor
 from modules.step3_structurer import DataStructurer
 from modules.step4_compliance import ComplianceEngine, CheckStatus
 from modules.step5_sensitivity import SensitivityAnalyser
-from modules.step6_llm import LLMReasoner
+from modules.step7_rag import SdsRagEngine, RAG_SYSTEM_PROMPT
+from modules.step6_llm import LLMReasoner, call_openrouter
+from modules.config import get_openrouter_api_key, get_openrouter_llm_model
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -118,6 +120,29 @@ with st.sidebar:
     dpi    = st.slider("OCR DPI", 200, 400, 300, 50)
     language = st.text_input("OCR Language", "eng")
     st.divider()
+    st.subheader("⚖️ Step 4 — Evaluation Engine")
+    eval_engine_choice = st.selectbox(
+        "Compliance evaluation engine",
+        ["Rule-based deterministic (REACH / RoHS / ELV)",
+         "Custom ruleset (JSON config)"],
+        index=0,
+        help="Deterministic rule-based threshold screening, or a custom ruleset "
+             "loaded from a JSON file with 'rohs', 'reach_svhc' and 'elv' entries.")
+    custom_ruleset = None
+    if eval_engine_choice == "Custom ruleset (JSON config)":
+        ruleset_file = st.file_uploader("Ruleset JSON", type=["json"], key="ruleset_upload",
+                                        help="JSON: {\"rohs\": {\"<CAS>\": {\"name\": ..., \"threshold_ppm\": ...}}, "
+                                             "\"reach_svhc\": {\"<CAS>\": \"<name>\"}, \"elv\": {...}}")
+        if ruleset_file is not None:
+            try:
+                import json as _json
+                custom_ruleset = _json.loads(ruleset_file.getvalue().decode("utf-8"))
+                st.success(f"Custom ruleset loaded ({len(custom_ruleset.get('rohs', {}))} RoHS · "
+                           f"{len(custom_ruleset.get('reach_svhc', {}))} REACH · "
+                           f"{len(custom_ruleset.get('elv', {}))} ELV entries).")
+            except Exception as je:
+                st.error(f"Invalid ruleset JSON: {je}")
+    st.divider()
     st.subheader("🤖 Step 5 — LLM Recommendations")
     llm_enabled = st.checkbox("Generate LLM recommendations", value=False,
                               help="Adds an LLM reasoning stage after Step 5 producing "
@@ -127,8 +152,9 @@ with st.sidebar:
     llm_max_tokens = 1500
     if llm_enabled:
         llm_provider = st.selectbox("LLM provider", ["openai", "openrouter", "ollama"], index=1,
-                                    help="openai = GPT models, openrouter = Qwen / Microsoft Phi-4 / "
-                                         "Mistral Small served via OpenRouter, ollama = local models (no API key).")
+                                    help="openai = direct OpenAI GPT models, openrouter = Qwen / Microsoft Phi-4 / "
+                                         "Mistral Small / DeepSeek / OpenAI GPT served via OpenRouter, "
+                                         "ollama = local models (no API key).")
         MODEL_CHOICES = {
             "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
             "openrouter": [
@@ -141,13 +167,18 @@ with st.sidebar:
                 "microsoft/phi-4",
                 # Mistral
                 "mistralai/mistral-small-latest",
+                # DeepSeek
+                "deepseek/deepseek-v4-flash",
+                # OpenAI (via OpenRouter)
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o",
             ],
             "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
         }
         DEFAULT_IDX = {"openai": 0, "openrouter": 0, "ollama": 0}
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="Qwen flagship/open-weight, microsoft/phi-4 and "
-                                      "mistralai/mistral-small-latest are all served via OpenRouter. "
+                                 help="Qwen, microsoft/phi-4, mistralai/mistral-small-latest, "
+                                      "deepseek/deepseek-v4-flash and openai/* are all served via OpenRouter. "
                                       "Needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
         llm_max_tokens = st.select_slider(
@@ -166,13 +197,15 @@ with st.sidebar:
 3. 🗂️ Data Structuring & Validation  
 4. ⚖️ Regulatory Compliance Screening  
 5. 🎯 Sensitivity & Threshold Risk  
+6. 🤖 LLM Recommendations (optional)
+7. 💬 RAG — Ask the SDS
 """)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("🛡️ AI Safety Data Sheet Manager Assist")
-st.caption("Step 1 — Extraction → Step 2 — Targeted SDS NER → Step 3 — Structuring → Step 4 — Regulatory Screening → Step 5 — Sensitivity Analysis")
+st.caption("Step 1 — Extraction → Step 2 — Targeted SDS NER → Step 3 — Structuring → Step 4 — Regulatory Screening → Step 5 — Sensitivity Analysis → Step 6 — LLM Recommendations → Step 7 — RAG Q&A over the SDS")
 
 uploaded = st.file_uploader("Upload Safety Data Sheet (PDF / image)", type=["pdf","png","jpg","jpeg","tiff","bmp"])
 
@@ -228,7 +261,9 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
 
         with st.status("Step 4 — Regulatory compliance screening…", expanded=True) as status:
             t0 = time.time()
-            compliance = ComplianceEngine().run(structured)
+            engine = ComplianceEngine(ruleset=custom_ruleset)
+            compliance = engine.run(structured)
+            st.session_state["eval_engine_used"] = engine.engine_name
             st.session_state["compliance_report"] = compliance
             st.session_state["step4_time"]        = time.time() - t0
             status.update(label="✅ Step 4 completed", state="complete")
@@ -255,6 +290,29 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
                     st.warning(f"LLM step failed: {le}")
                     status.update(label="⚠️ LLM step skipped", state="complete")
 
+        # RAG layer over the uploaded SDS (index built once per run) — Step 7
+        with st.status("Building RAG index over the SDS sheet…", expanded=False) as status:
+            t0 = time.time()
+            try:
+                rag_engine_obj = SdsRagEngine(ocr.full_text, pages=ocr.pages, structured_mds=structured)
+                st.session_state["rag_engine"] = rag_engine_obj
+                st.session_state["rag_chunks"] = len(rag_engine_obj.chunks)
+                st.session_state["rag_time"] = time.time() - t0
+                # Generator used by the RAG answers: Step-5 model if LLM enabled,
+                # otherwise the configured OpenRouter default.
+                if llm_enabled and llm_provider == "openrouter":
+                    st.session_state["rag_generator_name"] = f"openrouter/{llm_model}"
+                elif llm_enabled:
+                    st.session_state["rag_generator_name"] = f"{llm_provider}/{llm_model} (RAG uses OpenRouter)"
+                else:
+                    st.session_state["rag_generator_name"] = f"openrouter/{get_openrouter_llm_model()}"
+                st.session_state["rag_retriever_name"] = "TF-IDF cosine similarity · sentence chunks (~800 chars, overlap 120)"
+                status.update(label="✅ RAG index ready", state="complete")
+            except Exception as re_exc:
+                st.session_state["rag_engine"] = None
+                st.warning(f"RAG indexing failed: {re_exc}")
+                status.update(label="⚠️ RAG index unavailable", state="complete")
+
         # Compute end-to-end time
         st.session_state["e2e_time"] = (
             st.session_state.get("ocr_time", 0) +
@@ -262,7 +320,8 @@ if st.button("🚀 Extract & Analyse SDS", type="primary", use_container_width=T
             st.session_state.get("step3_time", 0) +
             st.session_state.get("step4_time", 0) +
             st.session_state.get("step5_time", 0) +
-            st.session_state.get("llm_time", 0)
+            st.session_state.get("llm_time", 0) +
+            st.session_state.get("rag_time", 0)
         )
 
     except Exception as exc:
@@ -542,6 +601,8 @@ st.markdown("---")
 st.header("⚖️ Step 4 — Regulatory Compliance Screening")
 st.caption("PASS = below threshold. REVIEW = range crosses threshold. FAIL = above threshold. UNKNOWN = CAS not in configured ruleset.")
 
+st.info(f"**Evaluation Engine used:** {st.session_state.get('eval_engine_used', 'Rule-based deterministic engine (REACH / RoHS / ELV threshold ruleset)')}")
+
 c1,c2,c3,c4 = st.columns(4)
 c1.metric("✅ PASS",          compliance.pass_count)
 c2.metric("🔶 REVIEW",        compliance.warn_count)
@@ -757,11 +818,114 @@ if llm_enabled or llm_reasoning:
             st.success("No FAIL/WARNING findings — no corrective actions required.")
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  STEP 7 — RAG: ASK THE SDS  (retrieval layer after the Step-6 LLM output)
+# ══════════════════════════════════════════════════════════════════════════════
+rag_engine = st.session_state.get("rag_engine")
+if rag_engine is not None:
+    st.markdown("---")
+    st.header("💬 Step 7 — Ask the SDS (RAG)")
+    st.caption(f"Retrieval-Augmented Generation over the uploaded SDS sheet — "
+               f"{st.session_state.get('rag_chunks', len(rag_engine.chunks))} chunks indexed in "
+               f"{st.session_state.get('rag_time', 0):.2f}s. Answers are grounded only in this document.")
+
+    rm1, rm2, rm3 = st.columns(3)
+    rm1.metric("Chunks indexed", st.session_state.get("rag_chunks", len(rag_engine.chunks)))
+    rm2.metric("Answer generator", st.session_state.get(
+        "rag_generator_name",
+        f"openrouter/{llm_model}" if llm_enabled else f"openrouter/{get_openrouter_llm_model()}"))
+    rm3.metric("⏱ Index time", f"{st.session_state.get('rag_time', 0):.2f}s")
+
+    # ── RAG engines used ──
+    _rag_key_ok = bool(get_openrouter_api_key())
+    st.info(
+        f"**RAG Retriever:** {st.session_state.get('rag_retriever_name', 'TF-IDF cosine similarity · sentence chunks (~800 chars, overlap 120)')}  \n"
+        f"**RAG Generator:** {st.session_state.get('rag_generator_name', 'OpenRouter default / extractive fallback')} "
+        f"({'✅ OpenRouter key configured' if _rag_key_ok else '❌ no OpenRouter key — extractive fallback active'})"
+    )
+
+    # ── Per-question generation settings (user can override the Step-5 choice) ──
+    rc1, rc2, rc3 = st.columns([2, 1, 1])
+    with rc1:
+        rag_model_choice = st.selectbox(
+            "RAG answer model (OpenRouter)",
+            ["Use Step-5 selection"] + MODEL_CHOICES["openrouter"],
+            index=0,
+            help="Pick a different OpenRouter model just for RAG answers, or reuse the "
+                 "model selected for Step 5 recommendations.")
+    with rc2:
+        rag_topk = st.slider("Passages retrieved (top-k)", 2, 8, 4)
+    with rc3:
+        rag_maxtok = st.select_slider(
+            "Max answer tokens",
+            options=[256, 512, 768, 1024, 1500, 2048], value=512)
+    rag_model = (llm_model if (llm_enabled and llm_provider == "openrouter")
+                 else None) if rag_model_choice == "Use Step-5 selection" else rag_model_choice
+
+    if "rag_chat" not in st.session_state:
+        st.session_state["rag_chat"] = []
+
+    question = st.text_input("Your question about this SDS",
+                             placeholder="e.g. What is the CAS number and concentration of lead? Which sections mention first-aid measures?",
+                             key="rag_question_input")
+    ask_clicked = st.button("🔎 Ask", key="rag_ask_btn", type="primary")
+
+    # Suggested starter questions
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    _sug_texts = [
+        "What substances contain SVHCs?",
+        "Which concentration ranges cross RoHS thresholds?",
+        "What does section 4 (first aid) say?",
+        "List all CAS numbers found in the composition section.",
+    ]
+    _sug = [sc1.button(_sug_texts[0], key="sug1"), sc2.button(_sug_texts[1], key="sug2"),
+            sc3.button(_sug_texts[2], key="sug3"), sc4.button(_sug_texts[3], key="sug4")]
+    for pressed, txt in zip(_sug, _sug_texts):
+        if pressed:
+            question = txt
+
+    if ask_clicked and (question or "").strip():
+        q = question.strip()
+        with st.spinner("Retrieving relevant passages and generating answer…"):
+            t0 = time.time()
+            ans = rag_engine.answer(q,
+                                    provider="openrouter",
+                                    model=rag_model,
+                                    temperature=llm_temperature,
+                                    max_tokens=rag_maxtok,
+                                    top_k=rag_topk)
+            ans_ms = time.time() - t0
+        st.session_state["rag_chat"].append((ans, ans_ms))
+        st.session_state.pop("rag_question_input", None)
+
+    if st.session_state["rag_chat"]:
+        for ans, dt in reversed(st.session_state["rag_chat"][-5:]):
+            st.markdown(f"**Q:** {ans.question}")
+            st.markdown(ans.answer)
+            if ans.sources:
+                with st.expander(f"📚 Retrieved sources ({len(ans.sources)} passages · {dt:.1f}s · {ans.generator})"):
+                    src_rows = [{
+                        "Chunk #": s.chunk_id,
+                        "Page": s.page if s.page else "-",
+                        "Relevance score": s.score,
+                        "Passage excerpt": (s.text[:180] + "…") if len(s.text) > 180 else s.text,
+                    } for s in ans.sources]
+                    st.dataframe(pd.DataFrame(src_rows), use_container_width=True, hide_index=True)
+        if st.button("🗑 Clear chat history", key="rag_clear"):
+            st.session_state["rag_chat"] = []
+            st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  CONSOLIDATED EVALUATION METRICS DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.header("📊 Evaluation Metrics — Full Pipeline Summary")
 st.caption("All five evaluation metrics from the project proposal, measured against this document.")
+st.info(f"**Evaluation Engine used:** {st.session_state.get('eval_engine_used', 'Rule-based deterministic engine (REACH / RoHS / ELV threshold ruleset)')} "
+        f"| **Extraction engine:** {ocr.engine_used} "
+        + (f"| **LLM engine:** {llm_provider}/{llm_model}" if llm_enabled else "")
+        + (f" | **RAG engines:** retriever = TF-IDF cosine similarity · generator = "
+           f"{st.session_state.get('rag_generator_name', 'openrouter default / extractive')}"
+           if st.session_state.get("rag_engine") is not None else ""))
 
 ocr_conf    = ocr.avg_confidence
 cer         = max(0, 100 - ocr_conf)
@@ -777,6 +941,15 @@ all_risks   = [x for r in sensitivity.results for x in r.threshold_risks]
 near_sub    = [r for r in sensitivity.results if r.threshold_risks]
 avg_p       = sum(x.exceedance_probability for x in all_risks)/len(all_risks) if all_risks else 0
 e2e_t       = st.session_state.get("e2e_time", 0)
+
+_eval_engines = (
+    f"Evaluation: {st.session_state.get('eval_engine_used', 'Rule-based deterministic engine')} · "
+    f"Extraction: {ocr.engine_used}"
+    + (f" · LLM: {llm_provider}/{llm_model}" if llm_enabled else "")
+    + (f" · RAG: {st.session_state.get('rag_generator_name', 'openrouter default')}"
+       if st.session_state.get("rag_engine") is not None else "")
+)
+_engines_txt = _eval_engines
 
 rows_summary = [
     {
@@ -810,6 +983,16 @@ rows_summary = [
         "Target":         "All near-threshold flagged",
         "Measured":       f"{len(near_sub)}/{len(sensitivity.results)} substances with threshold risks  |  Avg P(exceed) {avg_p*100:.1f}%",
         "Status":         "✅ PASS" if len(sensitivity.results) > 0 else "⚠️ WARN",
+        "Engines used":   _engines_txt,
+    },
+    {
+        "Metric":         "RAG Q&A over the SDS",
+        "Step":           "Step 7",
+        "Formula":        "Grounded answer from top-k TF-IDF retrieved chunks",
+        "Target":         "Answers cite only SDS content",
+        "Measured":       f"{st.session_state.get('rag_chunks', 0)} chunks indexed · generator: {st.session_state.get('rag_generator_name', 'n/a')}",
+        "Status":         "✅ PASS" if st.session_state.get("rag_engine") is not None else "⚠️ WARN",
+        "Engines used":   f"Retriever: TF-IDF cosine · Generator: {st.session_state.get('rag_generator_name', 'extractive fallback')}",
     },
     {
         "Metric":         "End-to-End Processing Time",
@@ -827,6 +1010,7 @@ st.dataframe(
     hide_index=True,
     column_config={
         "Status": st.column_config.TextColumn("Status", width="small"),
+        "Engines used": st.column_config.TextColumn("Engines used", width="large"),
         "Formula": st.column_config.TextColumn("Formula", width="medium"),
         "Measured": st.column_config.TextColumn("Measured Value", width="large"),
     }
