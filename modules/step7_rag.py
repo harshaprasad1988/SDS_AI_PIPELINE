@@ -134,8 +134,8 @@ class TfidfIndex:
             return []
         scored = []
         for i, tf in enumerate(self.doc_tf):
-            dot = sum(self.idf.get(t, 0.0) ** 2 * min(f, 3)
-                      for t, f in qt.items() if (f := tf.get(t, 0)) > 0)
+            dot = sum(self.idf.get(t, 0.0) ** 2 * min(tf[t], 3)
+                      for t in qt if t in tf)
             if dot <= 0:
                 continue
             qnorm = math.sqrt(sum(self.idf.get(t, 0.0) ** 2 for t in qt)) or 1.0
