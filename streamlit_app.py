@@ -11,6 +11,7 @@ from modules.step5_sensitivity import SensitivityAnalyser
 from modules.step7_rag import SdsRagEngine, RAG_SYSTEM_PROMPT
 from modules.step6_llm import LLMReasoner, call_openrouter
 from modules.config import get_openrouter_api_key, get_openrouter_llm_model
+from modules.step8_deepeval import evaluate_rag_answer, METRIC_INFO as DEEPEVAL_METRIC_INFO
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -187,6 +188,28 @@ with st.sidebar:
             value=1500,
             help="Upper limit on the number of tokens the LLM may generate for the "
                  "recommendations (prompt + completion must fit the model's context window).")
+    # ── Step 8 — DeepEval RAG evaluation settings ──
+    st.subheader("🧪 Step 8 — DeepEval (RAG Evaluation)")
+    deepeval_enabled = st.checkbox("Enable DeepEval metrics on RAG answers", value=True,
+                                   help="Scores every Step-7 RAG answer with the DeepEval "
+                                        "framework: Faithfulness, Answer Relevancy, "
+                                        "Contextual Recall and a custom GEval Regulatory "
+                                        "Accuracy criterion (LLM-as-judge via OpenRouter).")
+    de_judge_model = None
+    de_threshold = 0.5
+    if deepeval_enabled:
+        _de_choices = ["Use Step-5 selection", "qwen/qwen3-235b-a22b",
+                       "microsoft/phi-4", "mistralai/mistral-small-latest",
+                       "deepseek/deepseek-v4-flash", "openai/gpt-4o-mini",
+                       "openai/gpt-4o"]
+        de_judge_model = st.selectbox(
+            "DeepEval judge model (OpenRouter)",
+            _de_choices,
+            index=0,
+            help="Model used by DeepEval to score the RAG answers. A strong model "
+                 "gives more reliable scores. Reuses the Step-5 pick by default.")
+        de_threshold = st.slider("Pass threshold", 0.1, 0.9, 0.5, 0.05,
+                                 help="Metric scores at or above this value are marked PASS.")
     show_raw    = st.checkbox("Show raw extracted text", value=False)
     show_source = st.checkbox("Show extraction source", value=False)
     st.divider()
@@ -199,13 +222,14 @@ with st.sidebar:
 5. 🎯 Sensitivity & Threshold Risk  
 6. 🤖 LLM Recommendations (optional)
 7. 💬 RAG — Ask the SDS
+8. 🧪 DeepEval — RAG Quality Metrics
 """)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("🛡️ AI Safety Data Sheet Manager Assist")
-st.caption("Step 1 — Extraction → Step 2 — Targeted SDS NER → Step 3 — Structuring → Step 4 — Regulatory Screening → Step 5 — Sensitivity Analysis → Step 6 — LLM Recommendations → Step 7 — RAG Q&A over the SDS")
+st.caption("Step 1 — Extraction → Step 2 — Targeted SDS NER → Step 3 — Structuring → Step 4 — Regulatory Screening → Step 5 — Sensitivity Analysis → Step 6 — LLM Recommendations → Step 7 — RAG Q&A over the SDS → Step 8 — DeepEval RAG Quality Metrics")
 
 uploaded = st.file_uploader("Upload Safety Data Sheet (PDF / image)", type=["pdf","png","jpg","jpeg","tiff","bmp"])
 
@@ -894,11 +918,37 @@ if rag_engine is not None:
                                     max_tokens=rag_maxtok,
                                     top_k=rag_topk)
             ans_ms = time.time() - t0
-        st.session_state["rag_chat"].append((ans, ans_ms))
+        # ── Step 8 — DeepEval metrics on this RAG answer (LLM-as-judge via OpenRouter) ──
+        de_res = None
+        de_ms = 0.0
+        if deepeval_enabled and ans.sources:
+            _judge = ((llm_model if (llm_enabled and llm_provider == "openrouter")
+                       else get_openrouter_llm_model())
+                      if de_judge_model in (None, "Use Step-5 selection") else de_judge_model)
+            with st.spinner("Running DeepEval metrics (LLM-as-judge via OpenRouter)…"):
+                t1 = time.time()
+                de_res = evaluate_rag_answer(
+                    ans.question, ans.answer,
+                    [s.text for s in ans.sources],
+                    judge_model=_judge, threshold=de_threshold)
+                de_ms = time.time() - t1
+        # Persist latest DeepEval run so the pipeline summary can display it
+        if de_res and de_res.get("ok"):
+            _rs = de_res["results"]
+            st.session_state["deepeval_last_summary"] = (
+                " · ".join(f"{r['metric']} {r['score']:.2f}" for r in _rs) +
+                f" ({de_ms:.1f}s)")
+            st.session_state["deepeval_last_status"] = (
+                "✅ PASS" if all(r["passed"] for r in _rs) else "⚠️ REVIEW")
+            st.session_state["deepeval_last_judge"] = de_res["judge"]
+        elif deepeval_enabled:
+            st.session_state["deepeval_last_summary"] = (de_res or {}).get("error") or "not evaluated"
+            st.session_state["deepeval_last_status"] = "⚠️ WARN"
+        st.session_state["rag_chat"].append((ans, ans_ms, de_res, de_ms))
         st.session_state.pop("rag_question_input", None)
 
     if st.session_state["rag_chat"]:
-        for ans, dt in reversed(st.session_state["rag_chat"][-5:]):
+        for ans, dt, de_res, de_ms in reversed(st.session_state["rag_chat"][-5:]):
             st.markdown(f"**Q:** {ans.question}")
             st.markdown(ans.answer)
             if ans.sources:
@@ -910,6 +960,24 @@ if rag_engine is not None:
                         "Passage excerpt": (s.text[:180] + "…") if len(s.text) > 180 else s.text,
                     } for s in ans.sources]
                     st.dataframe(pd.DataFrame(src_rows), use_container_width=True, hide_index=True)
+            # ── Step 8 — DeepEval results for this answer ──
+            if deepeval_enabled:
+                if de_res and de_res.get("ok"):
+                    st.markdown(f"**🧪 DeepEval — RAG quality** · judge: `{de_res['judge']}` · {de_ms:.1f}s")
+                    cols = st.columns(len(de_res["results"]))
+                    for col, r in zip(cols, de_res["results"]):
+                        icon = "✅" if r["passed"] else "❌"
+                        col.metric(f"{icon} {r['metric']}", f"{r['score']:.2f}",
+                                   f"threshold {r['threshold']:.2f}")
+                    with st.expander("DeepEval metric reasoning", expanded=False):
+                        for r in de_res["results"]:
+                            st.markdown(f"**{r['metric']}** — {DEEPEVAL_METRIC_INFO.get(r['metric'], '')}")
+                            st.caption(r["reason"] or "(no reason provided)")
+                        if de_res.get("partial_errors"):
+                            st.warning("Some metrics failed: " + "; ".join(de_res["partial_errors"]))
+                else:
+                    msg = (de_res or {}).get("error") or "No retrieved passages to evaluate."
+                    st.info(f"🧪 DeepEval did not run: {msg}")
         if st.button("🗑 Clear chat history", key="rag_clear"):
             st.session_state["rag_chat"] = []
             st.rerun()
@@ -993,6 +1061,15 @@ rows_summary = [
         "Measured":       f"{st.session_state.get('rag_chunks', 0)} chunks indexed · generator: {st.session_state.get('rag_generator_name', 'n/a')}",
         "Status":         "✅ PASS" if st.session_state.get("rag_engine") is not None else "⚠️ WARN",
         "Engines used":   f"Retriever: TF-IDF cosine · Generator: {st.session_state.get('rag_generator_name', 'extractive fallback')}",
+    },
+    {
+        "Metric":         "DeepEval — RAG answer quality",
+        "Step":           "Step 8",
+        "Formula":        "LLM-as-judge scores (0–1): Faithfulness · Answer Relevancy · Contextual Recall · GEval Regulatory Accuracy",
+        "Target":         f"All metric scores ≥ {de_threshold:.2f} (sidebar)",
+        "Measured":       st.session_state.get("deepeval_last_summary", "No RAG question evaluated yet"),
+        "Status":         st.session_state.get("deepeval_last_status", "ℹ️ N/A"),
+        "Engines used":   st.session_state.get("deepeval_last_judge", "openrouter judge via config.json key"),
     },
     {
         "Metric":         "End-to-End Processing Time",

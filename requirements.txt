@@ -11,3 +11,4 @@ PyYAML>=6.0,<7
 
 PyMuPDF>=1.24,<2
 openai>=1.40,<3
+deepeval>=2.0
