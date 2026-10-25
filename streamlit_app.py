@@ -1,6 +1,7 @@
 """AI based Safety Data Sheet Manager Assist — Full Pipeline with Evaluation Metrics."""
 from pathlib import Path
 import tempfile, time, math
+import numpy as np
 import pandas as pd
 import streamlit as st
 from modules.step1_ocr import OCRProcessor
@@ -12,6 +13,22 @@ from modules.step7_rag import SdsRagEngine, RAG_SYSTEM_PROMPT
 from modules.step6_llm import LLMReasoner, call_openrouter
 from modules.config import get_openrouter_api_key, get_openrouter_llm_model
 from modules.step8_deepeval import evaluate_rag_answer, METRIC_INFO as DEEPEVAL_METRIC_INFO
+
+
+def _text_df(rows: list, columns: list | None = None) -> pd.DataFrame:
+    """Build a DataFrame whose columns are always plain Python strings.
+
+    Streamlit renders st.dataframe() through pyarrow, which infers one Arrow type
+    per column and raises ArrowInvalid when an object column mixes floats with
+    placeholder strings (e.g. 1000.0 next to "—"). Forcing every cell to str
+    keeps the tables renderable regardless of what the pipeline extracted.
+    """
+    df = pd.DataFrame(rows, columns=columns) if columns else pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.astype(object).where(df.notna(), "").map(
+        lambda v: v if isinstance(v, str) else ("" if v is None or (isinstance(v, float) and np.isnan(v)) else str(v))
+    )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -439,7 +456,7 @@ st.header("🔬 Step 2 — SDS Targeted Extraction")
 
 st.subheader("Table 1 — Product & Supplier Information")
 si = nlp_result.supplier_info
-table1 = pd.DataFrame([{
+table1 = _text_df([{
     "Product Name":           si.product_name     or "Not detected",
     "Supplier Name":          si.supplier_name     or "Not available",
     "Supplier Address":       si.supplier_address  or "Not detected",
@@ -457,7 +474,7 @@ for s in nlp_result.substances:
         "Weight (ppm / mg per m3)":f"{s.weight_value} {s.weight_unit}" if s.weight_value else "Not stated",
         "Confidence":              f"{s.confidence*100:.1f}%",
     })
-df2 = pd.DataFrame(rows, columns=["Substance","CAS Number","Weight Fraction (%)","Weight (ppm / mg per m3)","Confidence"])
+df2 = _text_df(rows, columns=["Substance","CAS Number","Weight Fraction (%)","Weight (ppm / mg per m3)","Confidence"])
 if len(df2):
     st.dataframe(df2, use_container_width=True, hide_index=True)
     st.download_button("⬇️ Download Table 2 CSV",
@@ -469,7 +486,7 @@ else:
 
 if show_source and nlp_result.substances:
     st.subheader("Extraction source")
-    st.dataframe(pd.DataFrame([{
+    st.dataframe(_text_df([{
         "Substance": s.name, "Page": s.page_number or "—", "Source": s.source_text
     } for s in nlp_result.substances]), use_container_width=True, hide_index=True)
 
@@ -550,7 +567,7 @@ for s in structured.all_substances:
         "Range?":             "Yes" if s.is_range else "No",
         "Source Confidence":  f"{s.source_confidence*100:.1f}%",
     })
-st.dataframe(pd.DataFrame(structured_rows), use_container_width=True, hide_index=True)
+st.dataframe(_text_df(structured_rows), use_container_width=True, hide_index=True)
 
 with st.expander("Safety profile — extracted SDS sections", expanded=True):
     p = structured.sds_profile
@@ -645,7 +662,7 @@ for f in compliance.findings:
             "Observed (ppm)":  r.observed_ppm or "—",
             "Rationale":       r.rationale,
         })
-reg_df = pd.DataFrame(reg_rows)
+reg_df = _text_df(reg_rows)
 if not reg_df.empty:
     st.dataframe(reg_df, use_container_width=True, hide_index=True)
 else:
@@ -746,7 +763,7 @@ for r in sensitivity.results:
             "95% range ppm":       r.reported_range.replace("-","–"),
             "Risk":                "N/A",
         })
-st.dataframe(pd.DataFrame(sens_rows), use_container_width=True, hide_index=True)
+st.dataframe(_text_df(sens_rows), use_container_width=True, hide_index=True)
 
 # ── EVALUATION METRICS ───────────────────────────────────────────────────────
 with st.expander("📊 Step 5 — Evaluation Metrics (Sensitivity Coverage)", expanded=True):
@@ -837,7 +854,7 @@ if llm_enabled or llm_reasoning:
                 "Corrective Action": r.corrective_action,
                 "Exemption Check":   r.exemption_check,
             } for r in llm_reasoning.recommendations]
-            st.dataframe(pd.DataFrame(rec_rows), use_container_width=True, hide_index=True)
+            st.dataframe(_text_df(rec_rows), use_container_width=True, hide_index=True)
         else:
             st.success("No FAIL/WARNING findings — no corrective actions required.")
 
@@ -959,7 +976,7 @@ if rag_engine is not None:
                         "Relevance score": s.score,
                         "Passage excerpt": (s.text[:180] + "…") if len(s.text) > 180 else s.text,
                     } for s in ans.sources]
-                    st.dataframe(pd.DataFrame(src_rows), use_container_width=True, hide_index=True)
+                    st.dataframe(_text_df(src_rows), use_container_width=True, hide_index=True)
             # ── Step 8 — DeepEval results for this answer ──
             if deepeval_enabled:
                 if de_res and de_res.get("ok"):
@@ -1082,7 +1099,7 @@ rows_summary = [
 ]
 
 st.dataframe(
-    pd.DataFrame(rows_summary),
+    _text_df(rows_summary),
     use_container_width=True,
     hide_index=True,
     column_config={
