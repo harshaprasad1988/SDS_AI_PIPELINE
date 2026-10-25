@@ -1,2 +1,1 @@
-# Bundles and archives
-*.bundle
+__pycache__/
