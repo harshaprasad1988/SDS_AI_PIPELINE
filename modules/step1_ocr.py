@@ -167,7 +167,8 @@ class OCRProcessor:
         try:
             import base64, io
             from openai import OpenAI
-            from .config import get_qwen_api_key, get_openrouter_base_url
+            from .config import (get_qwen_api_key, get_openrouter_base_url,
+                                 resolve_openrouter_model)
 
             api_key = get_qwen_api_key()
             if not api_key:
@@ -176,7 +177,8 @@ class OCRProcessor:
                     "in config.json or export OPENROUTER_API_KEY."
                 )
 
-            model = getattr(self, "qwen_model", None) or "qwen/qwen2.5-vl-72b-instruct"
+            model = resolve_openrouter_model(
+                getattr(self, "qwen_model", None) or "qwen/qwen2.5-vl-72b-instruct")
 
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="PNG")
