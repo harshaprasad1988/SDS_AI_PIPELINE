@@ -175,7 +175,11 @@ with st.sidebar:
     MODEL_CHOICES = {
         "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
         "openrouter": [
-            # Qwen
+            # Moonshot AI — Kimi (latest)
+            "moonshotai/kimi-k2.5",
+            "moonshotai/kimi-k2-thinking-turbo",
+            # Qwen (latest)
+            "qwen/qwen3-coder-plus",
             "qwen/qwen3-235b-a22b",
             "qwen/qwen-2.5-72b-instruct",
             "qwen/qwen-plus",
@@ -195,11 +199,11 @@ with st.sidebar:
     DEFAULT_IDX = {"openai": 0, "openrouter": 0, "ollama": 0}
     if llm_enabled:
         llm_provider = st.selectbox("LLM provider", ["openai", "openrouter", "ollama"], index=1,
-                                    help="openai = direct OpenAI GPT models, openrouter = Qwen / Microsoft Phi-4 / "
-                                         "Mistral Small / DeepSeek / OpenAI GPT served via OpenRouter, "
+                                    help="openai = direct OpenAI GPT models, openrouter = Kimi (Moonshot) / Qwen / "
+                                         "Microsoft Phi-4 / Mistral Small / DeepSeek / OpenAI GPT served via OpenRouter, "
                                          "ollama = local models (no API key).")
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="Qwen, microsoft/phi-4, mistralai/mistral-small-latest, "
+                                 help="moonshotai/kimi-*, qwen/*, microsoft/phi-4, mistralai/mistral-small-latest, "
                                       "deepseek/deepseek-v4-flash and openai/* are all served via OpenRouter. "
                                       "Needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
@@ -219,10 +223,12 @@ with st.sidebar:
     de_judge_model = None
     de_threshold = 0.5
     if deepeval_enabled:
-        _de_choices = ["Use Step-5 selection", "qwen/qwen3-235b-a22b",
-                       "microsoft/phi-4", "mistralai/mistral-small-latest",
-                       "deepseek/deepseek-v4-flash", "openai/gpt-4o-mini",
-                       "openai/gpt-4o"]
+        _de_choices = (["Use Step-5 selection"]
+                       + [m for m in MODEL_CHOICES["openrouter"]
+                          if m.startswith(("moonshotai/", "qwen/"))]
+                       + ["microsoft/phi-4", "mistralai/mistral-small-latest",
+                          "deepseek/deepseek-v4-flash", "openai/gpt-4o-mini",
+                          "openai/gpt-4o"])
         de_judge_model = st.selectbox(
             "DeepEval judge model (OpenRouter)",
             _de_choices,
