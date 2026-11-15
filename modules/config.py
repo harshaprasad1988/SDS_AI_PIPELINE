@@ -114,3 +114,34 @@ def resolve_openrouter_model(model: str) -> str:
     """Map a retired OpenRouter model ID to its current replacement."""
     model = (model or "").strip()
     return RETIRED_OPENROUTER_MODELS.get(model, model)
+
+
+# ── Model catalogue (single source of truth for the UI and checks) ──────────
+# Every ID below was verified against https://openrouter.ai/api/v1/models.
+# Run `python check_openrouter_models.py` to re-check them.
+OPENROUTER_OCR_MODELS = [
+    "qwen/qwen2.5-vl-72b-instruct",
+    "qwen/qwen3-vl-235b-a22b-instruct",
+    "qwen/qwen3-vl-30b-a3b-instruct",
+]
+
+OPENROUTER_LLM_MODELS = [
+    # Moonshot AI — Kimi
+    "moonshotai/kimi-k2.5",
+    "moonshotai/kimi-k2-thinking",
+    # Qwen
+    "qwen/qwen3-coder",
+    "qwen/qwen3-235b-a22b-2507",
+    "qwen/qwen-2.5-72b-instruct",
+    "qwen/qwen-plus",
+    "qwen/qwen3-30b-a3b-instruct-2507",
+    # Microsoft
+    "microsoft/phi-4",
+    # Mistral
+    "mistralai/mistral-small-3.2-24b-instruct",
+    # DeepSeek
+    "deepseek/deepseek-v4-flash",
+    # OpenAI (via OpenRouter)
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+]

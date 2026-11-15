@@ -11,7 +11,8 @@ from modules.step4_compliance import ComplianceEngine, CheckStatus
 from modules.step5_sensitivity import SensitivityAnalyser
 from modules.step7_rag import SdsRagEngine, RAG_SYSTEM_PROMPT
 from modules.step6_llm import LLMReasoner, call_openrouter
-from modules.config import get_openrouter_api_key, get_openrouter_llm_model
+from modules.config import (get_openrouter_api_key, get_openrouter_llm_model,
+                            OPENROUTER_OCR_MODELS, OPENROUTER_LLM_MODELS)
 from modules.step8_deepeval import evaluate_rag_answer, METRIC_INFO as DEEPEVAL_METRIC_INFO
 
 
@@ -131,7 +132,7 @@ with st.sidebar:
     if ocr_engine == "qwen-vl":
         qwen_ocr_model = st.selectbox(
             "Qwen OCR model (OpenRouter)",
-            ["qwen/qwen2.5-vl-72b-instruct", "qwen/qwen3-vl-235b-a22b-instruct", "qwen/qwen3-vl-30b-a3b-instruct"],
+            OPENROUTER_OCR_MODELS,
             index=0,
             help="Qwen vision models served through OpenRouter. Needs your OpenRouter "
                  "API key set in config.json; falls back to Tesseract if unavailable.")
@@ -174,26 +175,7 @@ with st.sidebar:
     # raise NameError: name 'MODEL_CHOICES' is not defined.
     MODEL_CHOICES = {
         "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
-        "openrouter": [
-            # Moonshot AI — Kimi (latest)
-            "moonshotai/kimi-k2.5",
-            "moonshotai/kimi-k2-thinking",
-            # Qwen (latest)
-            "qwen/qwen3-coder",
-            "qwen/qwen3-235b-a22b-2507",
-            "qwen/qwen-2.5-72b-instruct",
-            "qwen/qwen-plus",
-            "qwen/qwen3-30b-a3b-instruct-2507",
-            # Microsoft
-            "microsoft/phi-4",
-            # Mistral
-            "mistralai/mistral-small-3.2-24b-instruct",
-            # DeepSeek
-            "deepseek/deepseek-v4-flash",
-            # OpenAI (via OpenRouter)
-            "openai/gpt-4o-mini",
-            "openai/gpt-4o",
-        ],
+        "openrouter": list(OPENROUTER_LLM_MODELS),
         "ollama": ["llama3", "llama3.1", "qwen2.5:7b", "mistral"],
     }
     DEFAULT_IDX = {"openai": 0, "openrouter": 0, "ollama": 0}

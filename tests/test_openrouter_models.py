@@ -45,3 +45,9 @@ def test_call_openrouter_handles_none_content(monkeypatch):
     out = step6_llm.call_openrouter("q", "sys", model="qwen/qwen3-235b-a22b")
     assert out == "answer from reasoning"
     assert captured["model"] == "qwen/qwen3-235b-a22b-2507"
+
+
+def test_model_catalogue_has_no_retired_ids():
+    from modules.config import OPENROUTER_LLM_MODELS, OPENROUTER_OCR_MODELS
+    for m in OPENROUTER_LLM_MODELS + OPENROUTER_OCR_MODELS:
+        assert m not in RETIRED_OPENROUTER_MODELS, m
