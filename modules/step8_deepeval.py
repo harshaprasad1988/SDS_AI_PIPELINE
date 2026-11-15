@@ -122,7 +122,7 @@ def _build_or_model(model_name: str):
         def model_name_str(self) -> str:
             # `self.model` is set by __init__ via load_model(); we keep the
             # requested id on the instance instead.
-            return getattr(self, "_model_id", "qwen/qwen3-235b-a22b")
+            return getattr(self, "_model_id", "qwen/qwen3-235b-a22b-2507")
 
         def generate(self, *args, **kwargs) -> str:
             return self._call(*args, **kwargs)

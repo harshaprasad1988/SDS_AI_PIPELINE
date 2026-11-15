@@ -93,4 +93,24 @@ def get_openrouter_llm_model() -> str:
         model = str(section.get("llm_model", "") or "").strip()
         if model:
             return model
-    return "qwen/qwen3-235b-a22b"
+    return "qwen/qwen3-235b-a22b-2507"
+
+
+# OpenRouter model IDs that were retired/renamed and now fail with
+# "<id> is not a valid model ID". Old config.json files or saved selections
+# that still reference them are transparently mapped to a working model.
+RETIRED_OPENROUTER_MODELS = {
+    "qwen/qwen3-235b-a22b": "qwen/qwen3-235b-a22b-2507",
+    "qwen/qwen-vl-max": "qwen/qwen3-vl-235b-a22b-instruct",
+    "qwen/qwen3-vl-32b-instruct": "qwen/qwen3-vl-30b-a3b-instruct",
+    "qwen/qwen3-coder-plus": "qwen/qwen3-coder",
+    "qwen/qwen-turbo": "qwen/qwen3-30b-a3b-instruct-2507",
+    "moonshotai/kimi-k2-thinking-turbo": "moonshotai/kimi-k2-thinking",
+    "mistralai/mistral-small-latest": "mistralai/mistral-small-3.2-24b-instruct",
+}
+
+
+def resolve_openrouter_model(model: str) -> str:
+    """Map a retired OpenRouter model ID to its current replacement."""
+    model = (model or "").strip()
+    return RETIRED_OPENROUTER_MODELS.get(model, model)

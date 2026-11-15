@@ -131,7 +131,7 @@ with st.sidebar:
     if ocr_engine == "qwen-vl":
         qwen_ocr_model = st.selectbox(
             "Qwen OCR model (OpenRouter)",
-            ["qwen/qwen2.5-vl-72b-instruct", "qwen/qwen-vl-max", "qwen/qwen3-vl-32b-instruct"],
+            ["qwen/qwen2.5-vl-72b-instruct", "qwen/qwen3-vl-235b-a22b-instruct", "qwen/qwen3-vl-30b-a3b-instruct"],
             index=0,
             help="Qwen vision models served through OpenRouter. Needs your OpenRouter "
                  "API key set in config.json; falls back to Tesseract if unavailable.")
@@ -177,17 +177,17 @@ with st.sidebar:
         "openrouter": [
             # Moonshot AI — Kimi (latest)
             "moonshotai/kimi-k2.5",
-            "moonshotai/kimi-k2-thinking-turbo",
+            "moonshotai/kimi-k2-thinking",
             # Qwen (latest)
-            "qwen/qwen3-coder-plus",
-            "qwen/qwen3-235b-a22b",
+            "qwen/qwen3-coder",
+            "qwen/qwen3-235b-a22b-2507",
             "qwen/qwen-2.5-72b-instruct",
             "qwen/qwen-plus",
-            "qwen/qwen-turbo",
+            "qwen/qwen3-30b-a3b-instruct-2507",
             # Microsoft
             "microsoft/phi-4",
             # Mistral
-            "mistralai/mistral-small-latest",
+            "mistralai/mistral-small-3.2-24b-instruct",
             # DeepSeek
             "deepseek/deepseek-v4-flash",
             # OpenAI (via OpenRouter)
@@ -203,7 +203,7 @@ with st.sidebar:
                                          "Microsoft Phi-4 / Mistral Small / DeepSeek / OpenAI GPT served via OpenRouter, "
                                          "ollama = local models (no API key).")
         llm_model = st.selectbox("Model", MODEL_CHOICES[llm_provider], index=DEFAULT_IDX[llm_provider],
-                                 help="moonshotai/kimi-*, qwen/*, microsoft/phi-4, mistralai/mistral-small-latest, "
+                                 help="moonshotai/kimi-*, qwen/*, microsoft/phi-4, mistralai/mistral-small-3.2-24b-instruct, "
                                       "deepseek/deepseek-v4-flash and openai/* are all served via OpenRouter. "
                                       "Needs your OpenRouter API key in config.json.")
         llm_temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1)
@@ -226,7 +226,7 @@ with st.sidebar:
         _de_choices = (["Use Step-5 selection"]
                        + [m for m in MODEL_CHOICES["openrouter"]
                           if m.startswith(("moonshotai/", "qwen/"))]
-                       + ["microsoft/phi-4", "mistralai/mistral-small-latest",
+                       + ["microsoft/phi-4", "mistralai/mistral-small-3.2-24b-instruct",
                           "deepseek/deepseek-v4-flash", "openai/gpt-4o-mini",
                           "openai/gpt-4o"])
         de_judge_model = st.selectbox(

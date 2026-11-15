@@ -155,12 +155,12 @@ def call_ollama(prompt: str, system: str, model: str = "llama3",
 
 
 def call_openrouter(prompt: str, system: str,
-                    model: str = "qwen/qwen3-235b-a22b",
+                    model: str = "qwen/qwen3-235b-a22b-2507",
                     temperature: float = 0.2, max_tokens: int = 1500) -> str:
     """Call ANY OpenRouter-hosted model via OpenRouter's OpenAI-compatible
     endpoint (https://openrouter.ai/api/v1). The `model` argument is passed
     straight through, so Qwen ("qwen/..."), Microsoft Phi-4
-    ("microsoft/phi-4"), Mistral Small ("mistralai/mistral-small-latest"),
+    ("microsoft/phi-4"), Mistral Small ("mistralai/mistral-small-3.2-24b-instruct"),
     DeepSeek ("deepseek/deepseek-v4-flash"), OpenAI ("openai/gpt-4o-mini") and
     every other OpenRouter model ID are all handled by this single function."""
     try:
@@ -168,7 +168,9 @@ def call_openrouter(prompt: str, system: str,
     except ImportError:
         raise RuntimeError("openai package not installed. Run: pip install openai")
 
-    from .config import get_openrouter_api_key, get_openrouter_base_url
+    from .config import (get_openrouter_api_key, get_openrouter_base_url,
+                         resolve_openrouter_model)
+    model = resolve_openrouter_model(model)
     api_key = get_openrouter_api_key()
     if not api_key:
         raise RuntimeError(
@@ -188,10 +190,31 @@ def call_openrouter(prompt: str, system: str,
                 {"role": "user",   "content": prompt}
             ]
         )
-        return response.choices[0].message.content
     except Exception as e:
         logger.error(f"OpenRouter ({model}) API error: {e}")
+        msg = str(e)
+        if "not a valid model" in msg.lower() or "no endpoints found" in msg.lower():
+            raise RuntimeError(
+                f"OpenRouter does not serve model '{model}'. Pick another model "
+                "(e.g. qwen/qwen3-235b-a22b-2507) or check "
+                "https://openrouter.ai/models for the current ID."
+            ) from e
         raise
+
+    if not getattr(response, "choices", None):
+        raise RuntimeError(f"OpenRouter ({model}) returned no choices: {response}")
+    message = response.choices[0].message
+    # Reasoning models (e.g. kimi-k2-thinking) can return content=None when
+    # the whole token budget is spent on reasoning — never return None.
+    content = (message.content or "").strip()
+    if not content:
+        content = (getattr(message, "reasoning", None) or "").strip()
+    if not content:
+        raise RuntimeError(
+            f"OpenRouter ({model}) returned an empty answer — try increasing "
+            "max output tokens or choosing a non-reasoning model."
+        )
+    return content
 
 
 # ── Main LLM Reasoner ────────────────────────────────────────────────────────
